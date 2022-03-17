@@ -3,6 +3,15 @@ Running this script eventually gives:
 23
 eval: split train. loss 4.073383e-03. error 0.62%. misses: 45
 eval: split test . loss 2.838382e-02. error 4.09%. misses: 82
+local run
+eval: split train. loss 5.234058e-03. error 0.86%. misses: 63
+eval: split test . loss 2.743839e-02. error 3.79%. misses: 76
+padding in conv2d:
+eval: split train. loss 7.048257e-03. error 0.91%. misses: 65
+eval: split test . loss 3.134866e-02. error 4.68%. misses: 94
+slice3 version 2
+eval: split train. loss 5.174854e-03. error 0.74%. misses: 54
+eval: split test . loss 2.841093e-02. error 4.38%. misses: 87
 """
 
 import os
@@ -30,7 +39,7 @@ class Net(nn.Module):
         acts = 0 # keep track of number of activations
 
         # H1 layer parameters and their initialization
-        self.H1w = nn.Parameter(winit(5*5*1, 12, 1, 5, 5))
+        self.H1w = nn.Parameter(winit(5*5*1, 12, 1, 5, 5)) # kernels
         self.H1b = nn.Parameter(torch.zeros(12, 8, 8)) # presumably init to zero for biases
         assert self.H1w.nelement() + self.H1b.nelement() == 1068
         macs += (5*5*1) * (8*8) * 12
@@ -43,7 +52,7 @@ class Net(nn.Module):
         to differently overlapping groups of 8/12 input planes. We will implement this with 3
         separate convolutions that we concatenate the results of.
         """
-        self.H2w = nn.Parameter(winit(5*5*8, 12, 8, 5, 5))
+        self.H2w = nn.Parameter(winit(5*5*8, 12, 8, 5, 5)) # kernels
         self.H2b = nn.Parameter(torch.zeros(12, 4, 4)) # presumably init to zero for biases
         assert self.H2w.nelement() + self.H2b.nelement() == 2592
         macs += (5*5*8) * (4*4) * 12
@@ -77,7 +86,7 @@ class Net(nn.Module):
         x = F.pad(x, (2, 2, 2, 2), 'constant', -1.0) # pad by two using constant -1 for background
         slice1 = F.conv2d(x[:, 0:8], self.H2w[0:4], stride=2) # first 4 planes look at first 8 input planes
         slice2 = F.conv2d(x[:, 4:12], self.H2w[4:8], stride=2) # next 4 planes look at last 8 input planes
-        slice3 = F.conv2d(torch.cat((x[:, 0:4], x[:, 8:12]), dim=1), self.H2w[8:12], stride=2) # last 4 planes are cross
+        slice3 = F.conv2d(x[:, 2:10], self.H2w[8:12], stride=2) # last 4 planes are ... (version 2)
         x = torch.cat((slice1, slice2, slice3), dim=1) + self.H2b
         x = torch.tanh(x)
 
@@ -98,7 +107,7 @@ class Net(nn.Module):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Train a 1989 LeCun ConvNet on digits")
-    parser.add_argument('--learning-rate', '-l', type=float, default=0.03, help="SGD learning rate")
+    parser.add_argument('--learning-rate', '-l', type=float, default=0.03, help="SGD learning rate") # 0.3 - no convergence; 0.003 - too slow and not perfect
     parser.add_argument('--output-dir'   , '-o', type=str,   default='out/base', help="output directory for training logs")
     args = parser.parse_args()
     print(vars(args))
