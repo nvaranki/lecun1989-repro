@@ -12,6 +12,12 @@ eval: split test . loss 3.134866e-02. error 4.68%. misses: 94
 slice3 version 2
 eval: split train. loss 5.174854e-03. error 0.74%. misses: 54
 eval: split test . loss 2.841093e-02. error 4.38%. misses: 87
+kernel of 3x3 size
+eval: split train. loss 9.977578e-03. error 1.37%. misses: 100
+eval: split test . loss 3.101756e-02. error 4.24%. misses: 84
+kernel of 3x3 size, 46 steps
+eval: split train. loss 4.674537e-03. error 0.78%. misses: 57
+eval: split test . loss 3.018412e-02. error 4.48%. misses: 89
 """
 
 import os
@@ -158,13 +164,12 @@ if __name__ == '__main__':
             # fetch a single example into a batch of 1
             x, y = Xtr[[step_num]], Ytr[[step_num]]
 
-            # forward the model and the loss
-            yhat = model(x)
-            loss = torch.mean((y - yhat)**2)
+            # forward the model
+            yhat = model(x) # runs model.forward(x)
 
-            # calculate the gradient and update the parameters
+            # calculate the loss and the gradient and update the parameters
             optimizer.zero_grad(set_to_none=True)
-            loss.backward()
+            torch.mean((y - yhat)**2).backward() #TODO how does it link to model/optimizer?
             optimizer.step()
 
         # after epoch epoch evaluate the train and test error / metrics
