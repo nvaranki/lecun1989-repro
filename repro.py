@@ -33,11 +33,13 @@ from tensorboardX import SummaryWriter # pip install tensorboardX
 
 # -----------------------------------------------------------------------------
 
+
 class Net(nn.Module):
     """ 1989 LeCun ConvNet per description in the paper """
 
-    def __init__(self):
+    def __init__(self, s1: int, n1, n2, s3, n3, n4, np=2):
         super().__init__()
+        self.np = np
 
         # initialization as described in the paper to my best ability, but it doesn't look right...
         winit = lambda fan_in, *shape: (torch.rand(*shape) - 0.5) * 2 * 2.4 / fan_in**0.5
@@ -45,12 +47,10 @@ class Net(nn.Module):
         acts = 0 # keep track of number of activations
 
         # H1 layer parameters and their initialization
-        # self.H1w = nn.Parameter(winit(5*5*1, 12, 1, 5, 5)) # kernels
-        self.H1w = nn.Parameter(winit(3*3*1, 12, 1, 3, 3)) # kernels
-        self.H1b = nn.Parameter(torch.zeros(12, 8, 8)) # presumably init to zero for biases
-        # assert self.H1w.nelement() + self.H1b.nelement() == 1068
-        macs += (5*5*1) * (8*8) * 12
-        acts += (8*8) * 12
+        self.H1w = nn.Parameter(winit(s1 * s1 * 1, n1, 1, s1, s1))  # 12*1*5*5 kernels
+        self.H1b = nn.Parameter(torch.zeros(n1, n2, n2)) # presumably init to zero for biases
+        macs += (s1 * s1 * 1) * (n2 * n2) * n1
+        acts += (n2 * n2) * n1
 
         # H2 layer parameters and their initialization
         """
@@ -59,42 +59,37 @@ class Net(nn.Module):
         to differently overlapping groups of 8/12 input planes. We will implement this with 3
         separate convolutions that we concatenate the results of.
         """
-        # self.H2w = nn.Parameter(winit(5*5*8, 12, 8, 5, 5)) # kernels
-        self.H2w = nn.Parameter(winit(3*3*8, 12, 8, 3, 3)) # kernels
-        self.H2b = nn.Parameter(torch.zeros(12, 4, 4)) # presumably init to zero for biases
-        # assert self.H2w.nelement() + self.H2b.nelement() == 2592
-        macs += (5*5*8) * (4*4) * 12
-        acts += (4*4) * 12
+        self.H2w = nn.Parameter(winit(s1 * s1 * n2, n1, n2, s1, s1))  # 12*8*5*5 kernels
+        self.H2b = nn.Parameter(torch.zeros(n1, s3, s3)) # presumably init to zero for biases
+        macs += (s1 * s1 * n2) * (s3 * s3) * n1
+        acts += (s3 * s3) * n1
 
         # H3 is a fully connected layer
-        self.H3w = nn.Parameter(winit(4*4*12, 4*4*12, 30))
-        self.H3b = nn.Parameter(torch.zeros(30))
-        assert self.H3w.nelement() + self.H3b.nelement() == 5790
-        macs += (4*4*12) * 30
-        acts += 30
+        self.H3w = nn.Parameter(winit(s3 * s3 * n1, s3 * s3 * n1, n3))  # 192*30
+        self.H3b = nn.Parameter(torch.zeros(n3))
+        macs += (s3 * s3 * n1) * n3
+        acts += n3
 
         # output layer is also fully connected layer
-        self.outw = nn.Parameter(winit(30, 30, 10))
-        self.outb = nn.Parameter(-torch.ones(10)) # 9/10 targets are -1, so makes sense to init slightly towards it
-        assert self.outw.nelement() + self.outb.nelement() == 310
-        macs += 30 * 10
-        acts += 10
+        self.outw = nn.Parameter(winit(n3, n3, n4))  # 30*10
+        self.outb = nn.Parameter(-torch.ones(n4)) # 9/10 targets are -1, so makes sense to init slightly towards it
+        macs += n3 * n4
+        acts += n4
 
         self.macs = macs
         self.acts = acts
 
     def forward(self, x):
+        p = self.np
 
         # x has shape (1, 1, 16, 16)
-        # x = F.pad(x, (2, 2, 2, 2), 'constant', -1.0) # pad by two using constant -1 for background
-        x = F.pad(x, (1, 1, 1, 1), 'constant', -1.0) # pad by one using constant -1 for background
+        x = F.pad(x, (p, p, p, p), 'constant', -1.0) # pad by two using constant -1 for background
+        # NV x = F.conv2d(x, self.H1w, stride=2, padding=0 if p == 1 else p) + self.H1b
         x = F.conv2d(x, self.H1w, stride=2) + self.H1b
-        # x = F.conv2d(x, self.H1w, stride=2, padding=2) + self.H1b
         x = torch.tanh(x)
 
         # x is now shape (1, 12, 8, 8)
-        # x = F.pad(x, (2, 2, 2, 2), 'constant', -1.0) # pad by two using constant -1 for background
-        x = F.pad(x, (1, 1, 1, 1), 'constant', -1.0) # pad by one using constant -1 for background
+        x = F.pad(x, (p, p, p, p), 'constant', -1.0) # pad by two using constant -1 for background
         slice1 = F.conv2d(x[:, 0:8], self.H2w[0:4], stride=2) # first 4 planes look at first 8 input planes
         slice2 = F.conv2d(x[:, 4:12], self.H2w[4:8], stride=2) # next 4 planes look at last 8 input planes
         slice3 = F.conv2d(x[:, 2:10], self.H2w[8:12], stride=2) # last 4 planes are ... (version 2)
@@ -110,10 +105,11 @@ class Net(nn.Module):
         x = x @ self.outw + self.outb
         x = torch.tanh(x)
 
-         # x is finally shape (1, 10)
+        # x is finally shape (1, 10)
         return x
 
 # -----------------------------------------------------------------------------
+
 
 if __name__ == '__main__':
 
@@ -135,8 +131,10 @@ if __name__ == '__main__':
     writer = SummaryWriter(args.output_dir)
 
     # init a model
-    model = Net()
+    model = Net(5, 12, 8, 4, 30, 10, 2)
+    # NV model = Net(3, 12, 8, 4, 30, 10, 1)
     print("model stats:")
+    print("# kernels:     ", (5, 12, 8, 4, 30, 10))
     print("# params:      ", sum(p.numel() for p in model.parameters())) # in paper total is 9,760
     print("# MACs:        ", model.macs)
     print("# activations: ", model.acts)
@@ -177,7 +175,7 @@ if __name__ == '__main__':
             torch.mean((y - yhat)**2).backward() #TODO how does it link to model/optimizer?
             optimizer.step()
 
-        # after epoch epoch evaluate the train and test error / metrics
+        # after epoch evaluate the train and test error / metrics
         print(pass_num + 1)
         eval_split('train')
         eval_split('test')
