@@ -6,6 +6,9 @@ eval: split test . loss 2.838382e-02. error 4.09%. misses: 82
 local run
 eval: split train. loss 5.234058e-03. error 0.86%. misses: 63
 eval: split test . loss 2.743839e-02. error 3.79%. misses: 76
+23 CUDA GeForce 1070Ti (too low batch size to be efficient)
+eval: split train. loss 6.008524e-03. error 0.81%. misses: 59
+eval: split test . loss 2.932071e-02. error 4.48%. misses: 90
 padding in conv2d:
 eval: split train. loss 7.048257e-03. error 0.91%. misses: 65
 eval: split test . loss 3.134866e-02. error 4.68%. misses: 94
@@ -131,17 +134,20 @@ if __name__ == '__main__':
     writer = SummaryWriter(args.output_dir)
 
     # init a model
-    model = Net(5, 12, 8, 4, 30, 10, 2)
-    # NV model = Net(3, 12, 8, 4, 30, 10, 1)
+    device = torch.device("cuda:0")
+    # device = torch.device("cpu")
+    model = Net(5, 12, 8, 4, 30, 10, 2).to(device)
+    # NV model = Net(3, 12, 8, 4, 30, 10, 1).to(device)
     print("model stats:")
     print("# kernels:     ", (5, 12, 8, 4, 30, 10))
+    # NV print("# kernels:     ", (3, 12, 8, 4, 30, 10, 1))
     print("# params:      ", sum(p.numel() for p in model.parameters())) # in paper total is 9,760
     print("# MACs:        ", model.macs)
     print("# activations: ", model.acts)
 
     # init data
-    Xtr, Ytr = torch.load('train1989.pt')
-    Xte, Yte = torch.load('test1989.pt')
+    Xtr, Ytr = torch.load('train1989.pt', device)
+    Xte, Yte = torch.load('test1989.pt', device)
 
     # init optimizer
     optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
